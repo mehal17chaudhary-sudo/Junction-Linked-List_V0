@@ -1,14 +1,18 @@
-# Junction Linked List (JLI) — AMJ List
+# Junction Linked List (JLI) — AMJ List (V0)
 
 **Stability. Structural Intelligence. Transparent Cost.**
+
+> **Status: early version (V0), kept for the record.**
+> This repository holds the first design of JLI: a segmented list with junctions and shortcuts, searched in O(√N). The design has since been rebuilt as a three-level external index (junctions → blocks → block-level skip list) with a much broader benchmark study against a skip list.
+> **For the current design and results, see [Junction-Linked-List_V1](https://github.com/mehal17chaudhary-sudo/Junction-Linked-List_V1).**
 
 ---
 
 ## What Is JLI?
 
-Junction Linked List (JLI), also known as the **Anna Mani Junction List (AMJ List)**, is an in-memory, structurally driven ordered index built around a single guiding principle: **the structure should carry all the information needed to stay efficient — not the workload.**
+Junction Linked List (JLI), also known as the **Anna Mani Junction List (AMJ List)**, is an in-memory, structurally driven ordered index built around one guiding principle: **the structure should carry the information it needs to stay efficient, rather than depending on the workload.**
 
-JLI does not tune itself to access patterns. It does not rely on probabilistic balancing. Instead, it maintains explicit structural invariants that govern traversal, bound maintenance costs, and give you direct, real-time visibility into what the structure is doing and why.
+JLI does not tune itself to access patterns. It does not rely on probabilistic balancing. Instead, it maintains explicit structural invariants that govern traversal, bound maintenance costs, and give you direct visibility into what the structure is doing and why.
 
 ---
 
@@ -18,17 +22,15 @@ JLI is also referred to as the **Anna Mani Junction List (AMJ List)**, named in 
 
 In a newly independent India that depended on foreign meteorological instruments, Anna Mani took a harder path: she built reliable scientific instruments domestically, capable of operating under India's demanding and diverse conditions. Through her work at the India Meteorological Department, she standardized weather instruments for the entire country, later making foundational contributions to solar radiation measurement before renewable energy was a global concern.
 
-Her legacy is one of **structural self-reliance over dependence on external conditions** — the same design ethos that defines this data structure.
+Her legacy is one of **structural self-reliance over dependence on external conditions** — the same design ethos that guides this data structure.
 
 ---
 
 ## Why JLI Exists
 
-Most fast in-memory structures hide their true costs. Probabilistic structures promise strong averages but offer no structural guarantee on tail behavior, maintenance timing, or what happens when access patterns shift. Structures that rely on workload-specific tuning degrade when assumptions no longer hold.
+Many fast in-memory structures hide their true costs. Probabilistic structures offer strong averages but no structural guarantee on tail behavior or maintenance timing. Structures that rely on workload-specific tuning can degrade when their assumptions stop holding.
 
-These problems don't show up in microbenchmarks. They show up at scale, over time, under mixed or shifting workloads — precisely when reliability matters most.
-
-JLI was built to address this directly.
+These problems rarely show up in microbenchmarks. They show up at scale, over time, under mixed or shifting workloads. JLI was built to make that behavior explicit and measurable.
 
 ---
 
@@ -40,7 +42,7 @@ JLI is built from three components:
 
 **Junctions** sit at segment midpoints. Each junction stores segment metadata and participates in traversal as a normal node, providing O(N/S) coarse navigation without a separate index layer.
 
-**Shortcuts** are regular nodes within a segment that additionally accelerate fine-grained traversal. They are placed at computed offsets — not randomly — and reduce the linear scan within a segment without adding a new structural tier.
+**Shortcuts** are regular nodes within a segment that accelerate fine-grained traversal. They are placed at computed offsets, not randomly, and reduce the linear scan within a segment without adding a new structural tier.
 
 ---
 
@@ -54,41 +56,41 @@ JLI uses three levels of explicit, rate-limited maintenance:
 | Suboptimal | Flagged segments | Segment deviation exceeds `soft_pct` / `hard_pct` | Targets structurally degraded regions |
 | Global | Full list | Last resort: escalation gate or emergency ratio | Emergency structural recovery |
 
-None of these run on every operation. They are triggered by structural conditions — not probabilistic thresholds — and their costs are fully exposed through the `get_metrics()` API. If a global rebuild fires, you will see it in the counter.
+None of these run on every operation. They are triggered by structural conditions rather than probabilistic thresholds, and their costs are exposed through the `get_metrics()` API. If a global rebuild fires, you will see it in the counter.
 
 ---
 
-## What JLI Actually Guarantees
+## What Was Observed
 
-These are the properties JLI is designed and empirically validated to provide:
+These are empirical observations from the V0 benchmarks, not proofs. They hold for the tested sizes, workloads, and machine, and should be read that way.
 
-### 1. Structural Invariants Are Maintained
+### 1. Structural invariants are maintained
 
-JLI's invariants — segment size bounds, junction positioning, shortcut validity — are maintained continuously by the maintenance system. The structure does not silently degrade over time or under unusual key distributions. Maintenance is structural: it triggers on measurable drift, not on probability.
+In the tested runs, segment size bounds, junction positioning, and shortcut validity were kept within their limits by the maintenance system. Maintenance triggers on measurable drift, not on probability.
 
-### 2. Maintenance Behavior Is Workload-Independent
+### 2. Maintenance behavior was stable across tested workloads
 
-The *decision* to maintain is driven by structural state, not by what operations are running. Across workloads from pure-delete to extreme insert floods, the maintenance scan rate stays within a narrow band. The structure maintains itself at roughly the same rhythm whether you're reading, writing, or doing both.
+The *decision* to maintain is driven by structural state, not by the operation mix. Across the tested workloads, from pure-delete to extreme insert floods, the maintenance scan rate stayed within a narrow band.
 
-This does not mean **latency** is workload-independent — it is not. Latency is coupled to operation mix because search traversal and insert pressure have different raw costs. The invariant is about maintenance behavior, not about raw speed.
+This does not mean **latency** is workload-independent. It is not: search traversal and insert pressure have different raw costs. The observation is about maintenance behavior, not raw speed.
 
-### 3. Long-Run Stability
+### 3. Long-run p99 drift was bounded in the tested runs
 
-p99 latency over a 300k-operation continuous run drifts by a mean of **1.28×** — roughly 28% from first window to last, with exactly 1 global rebuild per seed. Worst-case observed drift across 4 seeds: 1.52×. The structure does not compound degradation over time and no runaway growth has been observed, but drift is real and should not be reported as zero.
+Over a 300k-operation continuous mixed workload, p99 latency drifted by a mean of **1.28×** from the first window to the last (range **1.16×–1.52×** across 4 seeds), with exactly 1 global rebuild per seed. No runaway growth was observed, but the drift is real and is not reported as zero.
 
-### 4. Near-Flat Latency Scaling With N
+### 4. p99 latency scaled flatly with N over a limited range
 
-p99 stays within a narrow absolute band as N grows. The log-log scaling exponent is **−0.073** across N=5k–200k — meaning p99 actually decreases relative to N as the dataset grows. A 40× increase in dataset size produces p99 values that are lower at large N than small N. Most sorted structures degrade with N. This one does not.
+Across N = 5k–200k, the log-log scaling exponent of p99 latency was **−0.073**, so p99 did not grow with N in this range. This is an observation over a narrow range of sizes. It is **not** an asymptotic claim, and it should not be read as the structure getting cheaper as it grows: the cost model below is O(√N), and constant overheads dominate at the smaller sizes tested.
 
-### 5. Works Correctly Across All Dataset Sizes
+### 5. Tested size range and its limits
 
-JLI operates correctly and maintains its structural invariants across the full range of practical in-memory dataset sizes. Parameters scale with `sqrt(N)` and the structure adapts automatically. The practical lower bound is approximately N=5,000, below which constant overhead dominates.
+The structure kept its invariants across the tested range of in-memory dataset sizes. Parameters scale with `sqrt(N)`. Below roughly N = 5,000, constant overhead dominates and JLI is not a good fit.
 
 ---
 
 ## Cost Model
 
-**Core Operations:**
+**Core operations:**
 
 | Operation | Best Case | Average / Worst Case |
 |---|---|---|
@@ -96,7 +98,9 @@ JLI operates correctly and maintains its structural invariants across the full r
 | Insert | O(1) | O(N/S + S) |
 | Delete | O(1) | O(N/S + S) |
 
-`S` = segment size. At `S ≈ sqrt(N)`, this reduces to O(sqrt(N)). **Average and worst-case bounds are identical** — traversal follows structural logic, not distributional assumptions.
+`S` = segment size. At `S ≈ sqrt(N)`, this reduces to O(√N). Average and worst-case bounds are identical, because traversal follows structural logic rather than distributional assumptions.
+
+**Comparison with a skip list:** a skip list's expected search cost is O(log N), which is asymptotically better than V0's O(√N). V0's contribution is its explicit structure, observable maintenance, and the stable behavior reported above, not a better asymptotic search bound. V1 addresses this with a multi-level external index; see the V1 repository.
 
 **Maintenance:**
 
@@ -104,15 +108,15 @@ JLI operates correctly and maintains its structural invariants across the full r
 |---|---|
 | Local Rebuild | O(r · S) per pass, r = rebuilt segments |
 | Suboptimal Rebuild | O(r · S) per pass, r = affected regions |
-| Global Rebuild | O(N) — last resort only |
+| Global Rebuild | O(N), last resort only |
 
-All maintenance costs are directly measurable via `get_metrics()`.
+All maintenance costs are measurable via `get_metrics()`.
 
 ---
 
 ## Observability
 
-JLI exposes a full set of read-only counters via `get_metrics()`:
+JLI exposes a set of read-only counters via `get_metrics()`:
 
 ```python
 m = jli.get_metrics()
@@ -128,40 +132,34 @@ m = jli.get_metrics()
 # }
 ```
 
-These are direct counts of what the structure has done — not estimates or approximations.
+These are direct counts of what the structure has done, not estimates.
 
 ---
 
-## Key Observed Properties
+## Configuration Notes
 
-**Latency scaling with N** — p99 scales with a log-log exponent of **−0.073** over the N=5k–200k range. A 40× dataset size increase produces p99 values that are lower at large N than small N. The structure gets proportionally cheaper as it grows — the opposite of most sorted structures.
-
-**Long-run p99 stability** — over a 300k-operation continuous mixed workload, mean first-to-last window p99 drift is **1.28×** (range: 1.16× to 1.52× across 4 seeds), with exactly 1 global rebuild per seed. No runaway growth observed.
-
-**Maintenance rate stability across workloads** — the maintenance scan rate stays within a narrow absolute range across workload profiles spanning pure-delete to extreme insert floods. The maintenance decision is structural, not workload-driven.
-
-**Configuration robustness** — the empirically tuned parameter set consistently outperforms alternative configurations by significant margins. Two hard limits are worth knowing: `sub_interval` set excessively high causes deferred maintenance to eventually fire as a large latency spike; `local_interval` below ~500 causes thrashing. Both are documented in the API reference.
+The empirically tuned parameter set outperformed the alternative configurations tried. Two hard limits are worth knowing: a `sub_interval` set excessively high lets deferred maintenance build up and eventually fire as a large latency spike, and a `local_interval` below ~500 causes thrashing. Both are documented in the API reference.
 
 ---
 
 ## Latency vs. Throughput
 
-JLI carries an explicit maintenance overhead — this is by design and fully measurable. If your primary metric is peak raw throughput on a single operation type, a simpler structure will outperform it. If your primary metric is **stable, predictable, observable behavior over long runtimes under mixed workloads**, JLI is built for exactly that.
+JLI carries an explicit maintenance overhead. This is by design and fully measurable. If your primary metric is peak raw throughput on a single operation type, a simpler structure will outperform it. If your primary metric is **stable, observable behavior over long runtimes under mixed workloads**, JLI is built for that.
 
 ---
 
 ## When to Use JLI
 
-**JLI is a strong fit when:**
+**A reasonable fit when:**
 - Workloads are mixed, unknown, or shift over time
 - Systems run continuously at high operation counts
 - Maintenance cost must be measurable and bounded, not hidden
-- Long-term latency stability is a correctness requirement
+- Long-term latency stability matters
 - Dataset size changes over the lifetime of the system
 
-**JLI is not designed for:**
-- Very small datasets (N < ~5,000) where constant overhead dominates
-- Random-access semantics — JLI is an ordered index, not a hash map or array
+**Not designed for:**
+- Very small datasets (N < ~5,000), where constant overhead dominates
+- Random-access semantics: JLI is an ordered index, not a hash map or array
 - Single-operation benchmarks optimized for one workload type
 - Workloads that are overwhelmingly search-dominant
 
@@ -206,4 +204,4 @@ Open to internships, research collaborations, and engineering roles where system
 
 ---
 
-*"If the ideas behind JLI resonate with you, the best way to evaluate it is to observe its behavior in your own workload."*
+*If the ideas behind JLI interest you, start with the [V1 repository](https://github.com/mehal17chaudhary-sudo/Junction-Linked-List_V1) and its benchmark results, then try it on your own workload.*
